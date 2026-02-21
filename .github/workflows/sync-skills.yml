@@ -1,0 +1,115 @@
+name: Sync Skills from Multiple Sources
+
+on:
+  schedule:
+    # 每天 UTC 时间 0:00 运行（北京时间 8:00）
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync from ComposioHQ/awesome-claude-skills
+        run: |
+          git remote add fork-upstream https://github.com/ComposioHQ/awesome-claude-skills.git || true
+          git fetch fork-upstream
+          UPSTREAM_BRANCH=$(git remote show fork-upstream | grep "HEAD branch" | sed 's/.*: //')
+          git merge fork-upstream/$UPSTREAM_BRANCH --no-edit || echo "Merge conflict, continue..."
+
+      - name: Sync from anthropics/skills
+        run: |
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
+          curl -sL "https://github.com/anthropics/skills/archive/refs/heads/main.zip" -o repo.zip
+          unzip -q repo.zip
+          cd anthropics-skills-main/skills
+          for item in */; do
+            item="${item%/}"
+            if [ -d "$item" ]; then
+              rm -rf "$GITHUB_WORKSPACE/$item"
+              cp -r "$item" "$GITHUB_WORKSPACE/"
+              echo "Synced: $item"
+            fi
+          done
+          rm -rf "$TEMP_DIR"
+
+      - name: Sync from obra/superpowers/skills
+        run: |
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
+          curl -sL "https://github.com/obra/superpowers/archive/refs/heads/main.zip" -o repo.zip
+          unzip -q repo.zip
+          cd superpowers-main/skills
+          for item in */; do
+            item="${item%/}"
+            if [ -d "$item" ]; then
+              rm -rf "$GITHUB_WORKSPACE/$item"
+              cp -r "$item" "$GITHUB_WORKSPACE/"
+              echo "Synced: $item"
+            fi
+          done
+          rm -rf "$TEMP_DIR"
+
+      - name: Sync from OthmanAdi/planning-with-files
+        run: |
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
+          curl -sL "https://github.com/OthmanAdi/planning-with-files/archive/refs/heads/master.zip" -o repo.zip
+          unzip -q repo.zip
+          cd planning-with-files-master/skills/planning-with-files
+          if [ -d "$GITHUB_WORKSPACE/planning-with-files" ]; then
+            rm -rf "$GITHUB_WORKSPACE/planning-with-files"
+          fi
+          cp -r . "$GITHUB_WORKSPACE/planning-with-files/"
+          echo "Synced: planning-with-files"
+          rm -rf "$TEMP_DIR"
+
+      - name: Sync from kepano/obsidian-skills
+        run: |
+          TEMP_DIR=$(mktemp -d)
+          cd "$TEMP_DIR"
+          curl -sL "https://github.com/kepano/obsidian-skills/archive/refs/heads/main.zip" -o repo.zip
+          unzip -q repo.zip
+          cd obsidian-skills-main/skills
+          for item in */; do
+            item="${item%/}"
+            if [ -d "$item" ]; then
+              rm -rf "$GITHUB_WORKSPACE/$item"
+              cp -r "$item" "$GITHUB_WORKSPACE/"
+              echo "Synced: $item"
+            fi
+          done
+          rm -rf "$TEMP_DIR"
+
+      - name: Commit and Push
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "chore: sync skills from multiple sources
+
+            - Synced from ComposioHQ/awesome-claude-skills
+            - Synced from anthropics/skills
+            - Synced from obra/superpowers/skills
+            - Synced from OthmanAdi/planning-with-files
+            - Synced from kepano/obsidian-skills"
+            
+            CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            git push origin $CURRENT_BRANCH
+          else
+            echo "No changes to commit"
+          fi
